@@ -1,3 +1,4 @@
+#define _USE_MATH_DEFINES
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -6,44 +7,217 @@
 #include <vector>
 #include <tuple>
 #include <random>
+#include <stack>
+#include <cmath>
+#include <set>
 
 using namespace std;
 
-class CutTheRoots {
+const int INFTY = 1e10;
+class CutTheRoots
+{
 public:
-    vector<int> makeCuts(int NP, vector<int> points, vector<int> roots) {
-        // first NP points give coordinates of the bases of the plants, written as x, y
-        // get x-coordinates of the bases, sort them, make cuts along y-axis to separate x-coordinates
-        vector<pair<int,int>> xys(NP);
-        for (int i = 0; i < NP; ++i) {
-            xys[i].first  = points[2 * i];
-            xys[i].second = points[2 * i + 1];
+    int NP;
+    int NR;
+    vector<int> points;
+    vector<int> roots;
+    vector<int> line;
+    int numLine;
+    vector<int> rightR;
+    vector<int> leftR;
+    vector<int> downR;
+    vector<int> upR;
+    vector<vector<int>> children;
+    set<tuple<int, int>> linePoints;
+    
+    vector<int> makeCuts(int NP, vector<int> points, vector<int> roots)
+    {
+        this->NP = NP;
+        this->NR = roots.size() / 2;
+        this->points = points;
+        this->roots = roots;
+        this->line = vector<int>(4 * NP, -1);
+        rightR = vector<int>(NP,0);
+        leftR  = vector<int>(NP,0);
+        downR  = vector<int>(NP,0);
+        upR    = vector<int>(NP,0);
+        children = vector<vector<int>>(NP + NR);
+        random_device seedGen;
+        mt19937 engine(seedGen());
+        for (int i = 0; i < NR; i++)
+        {
+            children[roots[2 * i]].push_back(roots[2 * i + 1]);
         }
-        sort(xys.begin(), xys.end());
-        
-        double eps = 1e-1;
-        random_device seed_gen;
-        mt19937 engine(seed_gen());
-        uniform_real_distribution<double> distRatio(0+eps, 1-eps);
-        vector<int> ret(4 * (NP - 1));
-        for (int i = 0; i < NP - 1; ++i) {
-            double ratio = distRatio(engine);
-            int a = ratio*xys[i].first + (1.0-ratio)*xys[i+1].first;
-            int b = ratio*xys[i].second + (1.0-ratio)*xys[i+1].second;
-            normal_distribution<double> distK(b, 1.0);
-            int k = distK(engine);
-            ret[4 * i] = a;
-            ret[4 * i + 1] = b;
-            if (k < 0 || k > 1024)
+
+        for (int i = 0; i < NP; i++)
+        {
+            int originX = points[2 * i];
+            int originY = points[2 * i + 1];
+            stack<int> s;
+            s.push(i);
+            while (!s.empty())
             {
-                ret[4 * i + 2] = a;
-                ret[4 * i + 3] = b + 1;
+                int cur = s.top(); s.pop();
+                int curX = points[2 * cur];
+                int curY = points[2 * cur + 1];
+                if (curX >= originX)
+                    rightR[i] = max(rightR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
+                else
+                    leftR[i] = max(leftR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
+                if (curY >= originY)
+                    downR[i] = max(downR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
+                else
+                    upR[i] = max(upR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
+                for (int j = 0; j < children[cur].size(); j++)
+                    s.push(children[cur][j]);
             }
-            else
+            cerr << i << endl;
+            cerr << "rightR:" << rightR[i] << endl;
+            cerr << "leftR:" << leftR[i] << endl;
+            cerr << "downR:" << downR[i] << endl;
+            cerr << "upR:" << upR[i] << endl;
+        }
+        vector<int> ret(NP * 4);
+        uniform_real_distribution<double> dist(- M_PI / 4,  7 * M_PI / 4);
+        for (int i = 0; i < NP; i++)
+        {
+            cerr << i << endl;
+            int originX = points[2 * i];
+            int originY = points[2 * i + 1];
+            int maxContactX, maxContactY, maxAnotherX, maxAnotherY;
+            string maxContactLines;
+            int maxScore = -INFTY;
+            for (int deg = -45; deg <= 315; deg++)
             {
-                ret[4 * i + 2] = a + 1;
-                ret[4 + i + 3] = k;
+                int contactX, contactY, anotherX, anotherY;
+                string contactLines;
+                int curRadius = 0;
+                double rad = (double)deg / 180.0 * M_PI;
+                if (rad <= M_PI / 4)
+                {
+                    contactLines = "Right";
+                    contactX = originX + sqrt(rightR[i]) * cos(rad);
+                    contactY = originY + sqrt(rightR[i]) * sin(rad);
+                    curRadius = rightR[i];
+                }
+                else if (rad <= 3 * M_PI / 4)
+                {
+                    contactLines = "Down";
+                    contactX = originX + sqrt(downR[i]) * cos(rad);
+                    contactY = originY + sqrt(downR[i]) * sin(rad);
+                    curRadius = downR[i];
+                }
+                else if (rad <= 5 * M_PI / 4)
+                {
+                    contactLines = "Left";
+                    contactX = originX + sqrt(leftR[i]) * cos(rad);
+                    contactY = originY + sqrt(leftR[i]) * sin(rad);
+                    curRadius = leftR[i];
+                }
+                else if (rad <= 7 * M_PI / 4)
+                {
+                    contactLines = "Up";
+                    contactX = originX + sqrt(upR[i]) * cos(rad);
+                    contactY = originY + sqrt(upR[i]) * sin(rad);
+                    curRadius = upR[i];
+                }
+                anotherX = contactX - (contactY - originY);
+                anotherY = contactY + (contactX - originX);
+                if (anotherX < 0 || anotherX >= 1024 || anotherY < 0 || anotherY >= 1024)
+                {
+                    anotherX = contactX + (contactY - originY);
+                    anotherY = contactY - (contactX - originX);
+                }
+                if (contactX < 0 || contactX >= 1024 || contactY < 0 || contactY >= 1024 ||
+                    anotherX < 0 || anotherX >= 1024 || anotherY < 0 || anotherY >= 1024) continue;
+                if (linePoints.find(make_tuple(contactX, contactY)) != linePoints.end() ||
+                    linePoints.find(make_tuple(anotherX, anotherY)) != linePoints.end()) continue;
+                if (contactX == anotherX && contactY == anotherY) continue;
+                int curScore = curRadius;
+                for (int j = 0; j < NP; j++)
+                {
+                    int x = points[2 * j];
+                    int y = points[2 * j + 1];
+                    int dist =
+                        (double)((contactX - originX) * points[2 * i] + (contactY - originY) * points[2 * i + 1]
+                            - (contactY - originY) * contactY - (contactX - originX) * contactX)
+                        *((contactX - originX)*points[2 * i] + (contactY - originY) * points[2 * i + 1]
+                            - (contactY - originY) * contactY - (contactX - originX) * contactX)
+                        / (contactX - originX)*(contactX - originX) + (contactY - originY)*(contactY - originY);
+                    if (contactLines == "Right" || contactLines == "Left")
+                    {
+                        if (y < (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
+                        {
+                            if ((contactX - originX)*(contactY - originY) >= 0)
+                            {
+                                curScore += min(0,leftR[i] - dist);
+                            }
+                            else
+                            {
+                                curScore += min(0,rightR[i] - dist);
+                            }
+                        }
+                        else if (y > (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
+                        {
+                            if ((contactX - originX)*(contactY - originY) >= 0)
+                            {
+                                curScore += min(0,rightR[i] - dist);
+                            }
+                            else
+                            {
+                                curScore += min(0,leftR[i] - dist);
+                            }
+                        }
+                        else continue;
+                    }
+                    else
+                    {
+                        if (y < (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
+                        {
+                            if ((contactX - originX)*(contactY - originY) >= 0)
+                            {
+                                curScore += min(0,downR[i] - dist);
+                            }
+                            else
+                            {
+                                curScore += min(0,upR[i] - dist);
+                            }
+                        }
+                        else if (y > (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
+                        {
+                            if ((contactX - originX)*(contactY - originY) >= 0)
+                            {
+                                curScore += min(0,upR[i] - dist);
+                            }
+                            else
+                            {
+                                curScore += min(0,downR[i] - dist);
+                            }
+                        }
+                        else continue;
+                    }
+                }
+                if (maxScore < curScore)
+                {
+                    maxScore = curScore;
+                    maxContactX = contactX;
+                    maxContactY = contactY;
+                    maxAnotherX = anotherX;
+                    maxAnotherY = anotherY;
+                    maxContactLines = contactLines;
+                }
             }
+            ret[4 * i] = maxContactX;
+            ret[4 * i + 1] = maxContactY;
+            ret[4 * i + 2] = maxAnotherX;
+            ret[4 * i + 3] = maxAnotherY;
+            linePoints.insert(make_tuple(maxContactX, maxContactY));
+            linePoints.insert(make_tuple(maxAnotherX, maxAnotherY));
+            cerr << maxContactLines << endl;
+            cerr << "contactX:" << maxContactX << endl;
+            cerr << "contactY:" << maxContactY << endl;
+            cerr << "anotherX:" << maxContactX - (maxContactY - originY) << endl;
+            cerr << "anotherY:" << maxContactY + (maxContactX - originX) << endl;
         }
         return ret;
     }
