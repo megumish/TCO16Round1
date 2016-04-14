@@ -90,7 +90,7 @@ public:
         {
             cerr << i << endl;
             cerr << "Group:" << endl;
-            for (int i = 0; i < NP; i++) cerr << group[i] << endl;
+            //for (int i = 0; i < NP; i++) cerr << group[i] << endl;
             vector<int> groupSorted = group;
             sort(groupSorted.begin(), groupSorted.end());
             vector<int> groupUnique;
@@ -102,7 +102,7 @@ public:
             int maxContactX, maxContactY, maxAnotherX, maxAnotherY;
             vector<int> maxGroup;
             string maxContactLines;
-            int maxScore = -INFTY;
+            double maxScore = -INFTY;
             for (int deg = -45; deg <= 315; deg++)
             {
                 int contactX, contactY, anotherX, anotherY;
@@ -157,11 +157,10 @@ public:
                     int x = points[2 * j];
                     int y = points[2 * j + 1];
                     int dist =
-                        (double)((contactX - originX) * points[2 * i] + (contactY - originY) * points[2 * i + 1]
+                        ((contactX - originX) * x + (contactY - originY) * y
                             - (contactY - originY) * contactY - (contactX - originX) * contactX)
-                        *((contactX - originX)*points[2 * i] + (contactY - originY) * points[2 * i + 1]
-                            - (contactY - originY) * contactY - (contactX - originX) * contactX)
-                        / (contactX - originX)*(contactX - originX) + (contactY - originY)*(contactY - originY);
+                        / sqrt((contactX - originX)*(contactX - originX) + (contactY - originY)*(contactY - originY));
+                    dist *= dist;
                     if (contactLines == "Right" || contactLines == "Left")
                     {
                         if (y < (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
@@ -216,7 +215,7 @@ public:
                     }
                 }
                 curScore += (double)distScore / (1024 * 1024 * NP);
-                //cerr << "DistScore:" << (double)distScore / (1024 * 1024 * NP) << endl;
+                //cerr << "DistScore:" << (double)distScore /(1024 * 1024) << endl;
                 vector<int> newGroup;
                 int newNumOfGroup = 0;
                 if (numOfGroup != NP)
@@ -248,7 +247,14 @@ public:
                     unique_copy(newGroupSorted.begin(), newGroupSorted.end(), back_inserter(newGroupUnique));
                     newNumOfGroup = newGroupUnique.size();
                 }
-                curScore += (double) newNumOfGroup/NP * (max(0,(i+1)-numOfGroup)*100);
+                if (NP * 0.8 > i)
+                {
+                    curScore += (double)newNumOfGroup / NP * (max(0, i - numOfGroup) * 100);
+                }
+                else
+                {
+                    curScore += (double)newNumOfGroup / NP * (max(0, i * i - numOfGroup) * 100);
+                }
                 //cerr << "numOfGroupScore" << (double)newNumOfGroup / NP << endl;
                 if (maxScore < curScore)
                 {
@@ -269,11 +275,71 @@ public:
             linePoints.insert(make_tuple(maxAnotherX, maxAnotherY));
             if(numOfGroup != NP) group = maxGroup;
             cerr << maxContactLines << endl;
-            cerr << "contactX:" << maxContactX << endl;
-            cerr << "contactY:" << maxContactY << endl;
-            cerr << "anotherX:" << maxContactX - (maxContactY - originY) << endl;
-            cerr << "anotherY:" << maxContactY + (maxContactX - originX) << endl;
+            //cerr << "contactX:" << maxContactX << endl;
+            //cerr << "contactY:" << maxContactY << endl;
+            //cerr << "anotherX:" << maxContactX - (maxContactY - originY) << endl;
+            //cerr << "anotherY:" << maxContactY + (maxContactX - originX) << endl;
             cerr << maxScore << endl;
+            for (int j = 0; j < NP; j++)
+            {
+                int x = points[2 * j];
+                int y = points[2 * j + 1];
+                int dist =
+                    ((maxContactX - originX) * x + (maxContactY - originY) * y
+                        - (maxContactY - originY) * maxContactY - (maxContactX - originX) * maxContactX)
+                    / sqrt((maxContactX - originX)*(maxContactX - originX) + (maxContactY - originY)*(maxContactY - originY));
+                dist *= dist;
+                if (maxContactLines == "Right" || maxContactLines == "Left")
+                {
+                    if (y < (double)-(maxContactX - originX)*(x - maxContactX) / (maxContactY - originY) + maxContactY)
+                    {
+                        if ((maxContactX - originX)*(maxContactY - originY) >= 0)
+                        {
+                            leftR[j] = min(leftR[j], dist);
+                        }
+                        else
+                        {
+                            rightR[j] = min(rightR[j], dist);
+                        }
+                    }
+                    else if (y > (double) - (maxContactX - originX)*(x - maxContactX) / (maxContactY - originY) + maxContactY)
+                    {
+                        if ((maxContactX - originX)*(maxContactY - originY) >= 0)
+                        {
+                            leftR[j] = min(leftR[j], dist);
+                        }
+                        else
+                        {
+                            rightR[j] = min(rightR[j], dist);
+                        }
+                    }
+                }
+                else
+                {
+                    if (y < (double)-(maxContactX - originX)*(x - maxContactX) / (maxContactY - originY) + maxContactY)
+                    {
+                        if ((maxContactX - originX)*(maxContactY - originY) >= 0)
+                        {
+                            downR[j] = min(downR[j], dist);
+                        }
+                        else
+                        {
+                            upR[j] = min(upR[j], dist);
+                        }
+                    }
+                    else if (y > (double) - (maxContactX - originX)*(x - maxContactX) / (maxContactY - originY) + maxContactY)
+                    {
+                        if ((maxContactX - originX)*(maxContactY - originY) >= 0)
+                        {
+                            downR[j] = min(downR[j], dist);
+                        }
+                        else
+                        {
+                            upR[j] = min(upR[j], dist);
+                        }
+                    }
+                }
+            }
         }
         return ret;
     }
