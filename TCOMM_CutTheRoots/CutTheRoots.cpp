@@ -29,6 +29,10 @@ public:
     vector<int> leftR;
     vector<int> downR;
     vector<int> upR;
+    vector<int> rightCnt;
+    vector<int> leftCnt;
+    vector<int> downCnt;
+    vector<int> upCnt;
     vector<vector<int>> children;
     set<tuple<int, int>> linePoints;
     vector<int> group;
@@ -67,6 +71,10 @@ public:
             group = vector<int>(NP, 1);
             groupPos = 1;
             numOfGroup = 1;
+            rightCnt = vector<int>(NP, 0);
+            leftCnt = vector<int>(NP, 0);
+            downCnt = vector<int>(NP, 0);
+            upCnt = vector<int>(NP, 0);
             for (int i = 0; i < NP; i++)
             {
                 int originX = points[2 * i];
@@ -79,13 +87,25 @@ public:
                     int curX = points[2 * cur];
                     int curY = points[2 * cur + 1];
                     if (curX >= originX)
-                        rightR[i] = max(rightR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
+                    {
+                        rightR[i] = max(rightR[i], (int)sqrt((curX - originX)*(curX - originX) + (curY - originY)*(curY - originY)));
+                        rightCnt[i]++;
+                    }
                     else
-                        leftR[i] = max(leftR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
+                    {
+                        leftR[i] = max(leftR[i], (int)sqrt((curX - originX)*(curX - originX) + (curY - originY)*(curY - originY)));
+                        leftCnt[i]++;
+                    }
                     if (curY >= originY)
-                        downR[i] = max(downR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
+                    {
+                        downR[i] = max(downR[i], (int)sqrt((curX - originX)*(curX - originX) + (curY - originY)*(curY - originY)));
+                        downCnt[i]++;
+                    }
                     else
-                        upR[i] = max(upR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
+                    {
+                        upR[i] = max(upR[i], (int)sqrt((curX - originX)*(curX - originX) + (curY - originY)*(curY - originY)));
+                        upCnt[i]++;
+                    }
                     for (int j = 0; j < children[cur].size(); j++)
                         s.push(children[cur][j]);
                 }
@@ -164,39 +184,40 @@ public:
                     long long distScore = 0;
                     for (int j = 0; j < NP; j++)
                     {
+                        //cerr << distScore << endl;
                         int x = points[2 * j];
                         int y = points[2 * j + 1];
                         int dist =
                             ((contactX - originX) * x + (contactY - originY) * y
                                 - (contactY - originY) * contactY - (contactX - originX) * contactX)
                             / sqrt((contactX - originX)*(contactX - originX) + (contactY - originY)*(contactY - originY));
-                        dist *= dist;
+                        dist = abs(dist);
                         if (contactLines == "Right" || contactLines == "Left")
                         {
                             if (y < (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
                             {
                                 if ((contactX - originX)*(contactY - originY) >= 0)
                                 {
-                                    distScore += min(leftR[j], dist);
-                                    distScore += rightR[j] + downR[j] + upR[j];
+                                    distScore += min(leftR[j], dist) * leftCnt[j];
+                                    distScore += rightR[j]*rightCnt[i] + downR[j]*downCnt[j] + upR[j]*upCnt[j];
                                 }
                                 else
                                 {
-                                    distScore += min(rightR[j], dist);
-                                    distScore += leftR[j] + downR[j] + upR[j];
+                                    distScore += min(rightR[j], dist) * rightCnt[j];
+                                    distScore += leftR[j] * leftCnt[i] + downR[j] * downCnt[j] + upR[j] * upCnt[j];
                                 }
                             }
                             else if (y > (double) - (contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
                             {
                                 if ((contactX - originX)*(contactY - originY) >= 0)
                                 {
-                                    distScore += min(rightR[j], dist);
-                                    distScore += leftR[j] + downR[j] + upR[j];
+                                    distScore += min(rightR[j], dist) * rightCnt[j];
+                                    distScore += leftR[j] * leftCnt[i] + downR[j] * downCnt[j] + upR[j] * upCnt[j];
                                 }
                                 else
                                 {
-                                    distScore += min(leftR[j], dist);
-                                    distScore += rightR[j] + downR[j] + upR[j];
+                                    distScore += min(leftR[j], dist) * leftCnt[j];
+                                    distScore += rightR[j] * rightCnt[i] + downR[j] * downCnt[j] + upR[j] * upCnt[j];
                                 }
                             }
                         }
@@ -206,26 +227,26 @@ public:
                             {
                                 if ((contactX - originX)*(contactY - originY) >= 0)
                                 {
-                                    distScore += min(downR[j], dist);
-                                    distScore += rightR[j] + leftR[j] + upR[j];
+                                    distScore += min(downR[j], dist) * downCnt[j];
+                                    distScore += rightR[j] * rightCnt[i] + leftR[j] * leftCnt[j] + upR[j] * upCnt[j];
                                 }
                                 else
                                 {
-                                    distScore += min(upR[j], dist);
-                                    distScore += rightR[j] + leftR[j] + downR[j];
+                                    distScore += min(upR[j], dist) * upCnt[j];
+                                    distScore += rightR[j] * rightCnt[i] + leftR[j] * leftCnt[j] + downR[j] * downCnt[j];
                                 }
                             }
                             else if (y > (double) - (contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
                             {
                                 if ((contactX - originX)*(contactY - originY) >= 0)
                                 {
-                                    distScore += min(upR[j], dist);
-                                    distScore += rightR[j] + leftR[j] + downR[j];
+                                    distScore += min(upR[j], dist) * upCnt[j];
+                                    distScore += rightR[j] * rightCnt[i] + leftR[j] * leftCnt[j] + downR[j] * downCnt[j];
                                 }
                                 else
                                 {
-                                    distScore += min(downR[j], dist);
-                                    distScore += rightR[j] + leftR[j] + upR[j];
+                                    distScore += min(downR[j], dist) * downCnt[j];
+                                    distScore += rightR[j] * rightCnt[i] + leftR[j] * leftCnt[j] + upR[j] * upCnt[j];
                                 }
                             }
                         }
@@ -297,7 +318,7 @@ public:
                         ((maxContactX - originX) * x + (maxContactY - originY) * y
                             - (maxContactY - originY) * maxContactY - (maxContactX - originX) * maxContactX)
                         / sqrt((maxContactX - originX)*(maxContactX - originX) + (maxContactY - originY)*(maxContactY - originY));
-                    dist *= dist;
+                    dist = abs(dist);
                     if (maxContactLines == "Right" || maxContactLines == "Left")
                     {
                         if (y < (double)-(maxContactX - originX)*(x - maxContactX) / (maxContactY - originY) + maxContactY)
