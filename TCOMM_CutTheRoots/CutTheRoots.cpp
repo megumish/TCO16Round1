@@ -12,369 +12,183 @@
 #include <set>
 #include <iterator>
 #include <chrono>
+#include <functional>
 
 using namespace std;
 
 const int INFTY = 1e10;
+
+class Point
+{
+public:
+    double x, y;
+    Point() {};
+    Point(double x, double y) { this->x = x; this->y = y; }
+};
+
+class Line
+{
+public:
+    Point p1, p2;
+    Line(Point p1, Point p2) { this->p1 = p1; this->p2 = p2; }
+    Line(double x1, double y1, double x2, double y2) { this->p1 = Point(x1, y1); this->p2 = Point(x2, y2); }
+};
+
+class State
+{
+public:
+    vector<int> points;
+    vector<vector<int>> children;
+    vector<Line> lines;
+    vector<int> group;
+    vector<double> pointScores;
+};
 class CutTheRoots
 {
 public:
-    int NP;
-    int NR;
-    vector<int> points;
-    vector<int> roots;
-    vector<int> line;
-    int numLine;
-    vector<int> rightR;
-    vector<int> leftR;
-    vector<int> downR;
-    vector<int> upR;
-    vector<vector<int>> children;
-    set<tuple<int, int>> linePoints;
-    vector<int> group;
-    int groupPos;
-    int numOfGroup;
-    vector<int> makeCuts(int NP, vector<int> points, vector<int> roots)
+
+    // ax + by = e
+    // cx + dy = f
+    Point solveEquation(double a, double b, double e, double c, double d, double f)
     {
-        auto start = chrono::system_clock::now();
-        this->NP = NP;
-        this->NR = roots.size() / 2;
-        this->points = points;
-        this->roots = roots;
-        this->line = vector<int>(4 * NP, -1);
-        rightR = vector<int>(NP,0);
-        leftR  = vector<int>(NP,0);
-        downR  = vector<int>(NP,0);
-        upR    = vector<int>(NP,0);
-        children = vector<vector<int>>(NP + NR);
-        random_device seedGen;
-        mt19937 engine(seedGen());
-        for (int i = 0; i < NR; i++)
+        if (a*d == b*c) return{ -1,-1 };
+        return Point((b*f - e*d) / (b*c - a*d),(e*c - a*f) / (b*c - a*d));
+    }
+
+    Point getIntersection(Point p1,Point p2,Point q1,Point q2)
+    {
+        return solveEquation(p2.y-p1.y,p1.x-p2.x,(p2.y-p1.y)*p1.x+(p1.x-p2.x)*p1.y,
+                             q2.y-q1.y,q1.x-q2.x,(q2.y-q1.y)*q1.x+(q1.x-q2.x)*q1.y);
+    }
+
+    bool isOnTheLine(Line line, Point p)
+    {
+        return p.y >= (line.p2.y - line.p1.y) / (line.p2.x - line.p1.x)*(p.x - line.p1.x) + line.p1.y;
+    }
+
+    void cutAndMakeNewChild(State& state,Line line,int numOfParent,int numOfPoint)
+    {
+        if (numOfParent != -1)
         {
-            children[roots[2 * i]].push_back(roots[2 * i + 1]);
-        }
-        int cnt = 1;
-        vector<int> ret(4 * (NP - 1));
-        vector<int> decideRet;
-        long long maxAllScore = -INFTY;
-        double maxCnt = 100000 / (NP*NP);
-        double maxK;
-        double k = cnt / maxCnt;
-        cerr << maxCnt << endl;
-        while (maxCnt > cnt)
-        {
-            cnt++;
-            group = vector<int>(NP, 1);
-            groupPos = 1;
-            numOfGroup = 1;
-            for (int i = 0; i < NP; i++)
+            auto parentP = Point(state.points[2 * numOfParent], state.points[2 * numOfParent + 1]);
+            auto p = Point(state.points[2 * numOfPoint], state.points[2 * numOfPoint + 1]);
+            auto intersection = getIntersection(line.p1, line.p2, parentP, p);
+            if ((p.x - intersection.x)*(parentP.x - intersection.x) <= 0 && (p.y - intersection.y)*(parentP.y - intersection.y) <= 0)
             {
-                int originX = points[2 * i];
-                int originY = points[2 * i + 1];
-                stack<int> s;
-                s.push(i);
-                while (!s.empty())
-                {
-                    int cur = s.top(); s.pop();
-                    int curX = points[2 * cur];
-                    int curY = points[2 * cur + 1];
-                    if (curX >= originX)
-                        rightR[i] = max(rightR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
-                    else
-                        leftR[i] = max(leftR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
-                    if (curY >= originY)
-                        downR[i] = max(downR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
-                    else
-                        upR[i] = max(upR[i], (curX - originX)*(curX - originX) + (curY - originY)*(curY - originY));
-                    for (int j = 0; j < children[cur].size(); j++)
-                        s.push(children[cur][j]);
-                }
-                //cerr << i << endl;
-                //cerr << "rightR:" << rightR[i] << endl;
-                //cerr << "leftR:" << leftR[i] << endl;
-                //cerr << "downR:" << downR[i] << endl;
-                //cerr << "upR:" << upR[i] << endl;
+                state.children[numOfPoint].clear();
+                state.points[2 * numOfPoint] = intersection.x;
+                state.points[2 * numOfPoint + 1] = intersection.y;
+                return;
             }
-            vector<bool> selected(NP,false);
-            uniform_int_distribution<int> distOrigin(0, NP-1);
-            for (int i = 0; i < (NP-1); i++)
+        }
+        for (auto& numOfChild : state.children[numOfPoint])
+        {
+            cutAndMakeNewChild(state, line, numOfPoint, numOfChild);
+        }
+    }
+
+    void calculatePointScores(State& state, int numOfPoint)
+    {
+        if (state.children[numOfPoint].empty())
+        {
+            state.pointScores[numOfPoint] = 0;
+            return;
+        }
+        for (auto& numOfChild : state.children[numOfPoint]) calculatePointScores(state, numOfChild);
+        int x = state.points[2 * numOfPoint];
+        int y = state.points[2 * numOfPoint + 1];
+        double score = 0;
+        for (auto& numOfChild : state.children[numOfPoint])
+        {
+            score += state.pointScores[numOfChild];
+            int childX = state.points[2 * numOfChild];
+            int childY = state.points[2 * numOfChild + 1];
+            score += sqrt((x - childX)*(x - childX) + (y - childY)*(y - childY));
+        }
+        state.pointScores[numOfPoint] = score;
+    }
+
+    vector<int> makeCuts(const int NP, vector<int> ps, vector<int> rs)
+    {
+        int NR = rs.size() / 2;
+        vector<vector<int>> children(NP + NR);
+        for (int i = 0; i < NR; i++) children[rs[2 * i]].push_back(rs[2 * i + 1]);
+        vector<Line> lines(NP-1,Line(Point(-1,-1),Point(-1,-1)));
+        vector<int> group(NP, 0);
+        int numOfGroup = 1;
+        random_device seed_gen;
+        mt19937 engine(seed_gen());
+        uniform_int_distribution<> distCoordinate(0, 1024);
+        State state;
+        state.points = ps;
+        state.children = children;
+        state.group = group;
+        state.lines = lines;
+        state.pointScores = vector<double>(NP + NR, 0.);
+        for (int i = 0; i < NP; i++) calculatePointScores(state, i);
+        double rootsLength = 0;
+        for (int i = 0; i < NP; i++) rootsLength += state.pointScores[i];
+        cerr << rootsLength << endl;
+        state.points = ps;
+        state.children = children;
+        state.group = group;
+        state.lines = lines;
+        state.pointScores = vector<double>(NP + NR, 0.);
+        group = vector<int>(NP, 0);
+        numOfGroup = 1;
+        for (int i = 0; i < NP - 1; i++)
+        {
+            auto newLine = Line(distCoordinate(engine), distCoordinate(engine), distCoordinate(engine), distCoordinate(engine));
+            vector<int> newGroup = group;
+            while (numOfGroup <= i + 1)
             {
-                //cerr << i << endl;
-                //cerr << "Group:" << endl;
-                //for (int i = 0; i < NP; i++) cerr << group[i] << endl;
-                vector<int> groupSorted = group;
-                sort(groupSorted.begin(), groupSorted.end());
-                vector<int> groupUnique;
-                unique_copy(groupSorted.begin(), groupSorted.end(), back_inserter(groupUnique));
-                numOfGroup = groupUnique.size();
-                //cerr << "sepalated:" << numOfGroup << endl;
-                int maxOriginX,maxOriginY,maxContactX, maxContactY, maxAnotherX, maxAnotherY;
-                vector<int> maxGroup;
-                string maxContactLines;
-                double maxScore = -INFTY;
-                int p = distOrigin(engine);
-                while (selected[p]) p = distOrigin(engine);
-                selected[p] = true;
-                int originX = points[2 * p];
-                int originY = points[2 * p + 1];
-                bool updated = false;
-                for (int deg = -45; deg <= 315; deg++)
-                {
-                    int contactX, contactY, anotherX, anotherY;
-                    string contactLines;
-                    double rad = (double)deg / 180.0 * M_PI;
-                    if (rad <= M_PI / 4)
-                    {
-                        contactLines = "Right";
-                        contactX = originX + sqrt(rightR[p]) * cos(rad);
-                        contactY = originY + sqrt(rightR[p]) * sin(rad);
-                    }
-                    else if (rad <= 3 * M_PI / 4)
-                    {
-                        contactLines = "Down";
-                        contactX = originX + sqrt(downR[p]) * cos(rad);
-                        contactY = originY + sqrt(downR[p]) * sin(rad);
-                    }
-                    else if (rad <= 5 * M_PI / 4)
-                    {
-                        contactLines = "Left";
-                        contactX = originX + sqrt(leftR[p]) * cos(rad);
-                        contactY = originY + sqrt(leftR[p]) * sin(rad);
-                    }
-                    else if (rad <= 7 * M_PI / 4)
-                    {
-                        contactLines = "Up";
-                        contactX = originX + sqrt(upR[p]) * cos(rad);
-                        contactY = originY + sqrt(upR[p]) * sin(rad);
-                    }
-                    anotherX = contactX - (contactY - originY);
-                    anotherY = contactY + (contactX - originX);
-                    if (anotherX < 0 || anotherX >= 1024 || anotherY < 0 || anotherY >= 1024)
-                    {
-                        anotherX = contactX + (contactY - originY);
-                        anotherY = contactY - (contactX - originX);
-                    }
-                    if (contactX < 0 || contactX >= 1024 || contactY < 0 || contactY >= 1024 ||
-                        anotherX < 0 || anotherX >= 1024 || anotherY < 0 || anotherY >= 1024) continue;
-                    if (linePoints.find(make_tuple(contactX, contactY)) != linePoints.end() ||
-                        linePoints.find(make_tuple(anotherX, anotherY)) != linePoints.end()) continue;
-                    if (contactX == anotherX && contactY == anotherY) continue;
-                    double curScore = 0;
-                    double distScore = 0;
-                    for (int j = 0; j < NP; j++)
-                    {
-                        int x = points[2 * j];
-                        int y = points[2 * j + 1];
-                        int dist =
-                            ((contactX - originX) * x + (contactY - originY) * y
-                                - (contactY - originY) * contactY - (contactX - originX) * contactX)
-                            / sqrt((contactX - originX)*(contactX - originX) + (contactY - originY)*(contactY - originY));
-                        dist *= dist;
-                        if (contactLines == "Right" || contactLines == "Left")
-                        {
-                            if (y < (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
-                            {
-                                if ((contactX - originX)*(contactY - originY) >= 0)
-                                {
-                                    distScore += (double) min(leftR[j], dist)/max(1,leftR[j]);
-                                }
-                                else
-                                {
-                                    distScore += (double) min(rightR[j], dist)/max(1,rightR[j]);
-                                }
-                            }
-                            else if (y > (double) - (contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
-                            {
-                                if ((contactX - originX)*(contactY - originY) >= 0)
-                                {
-                                    distScore += (double) min(rightR[j], dist)/max(1,rightR[j]);
-                                }
-                                else
-                                {
-                                    distScore += (double) min(leftR[j], dist)/max(1,leftR[j]);
-                                }
-                            }
-                            else continue;
-                        }
-                        else
-                        {
-                            if (y < (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
-                            {
-                                if ((contactX - originX)*(contactY - originY) >= 0)
-                                {
-                                    distScore += (double) min(downR[j], dist)/max(1,downR[j]);
-                                }
-                                else
-                                {
-                                    distScore += (double) min(upR[j], dist)/max(1,upR[j]);
-                                }
-                            }
-                            else if (y > (double) - (contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
-                            {
-                                if ((contactX - originX)*(contactY - originY) >= 0)
-                                {
-                                    distScore += (double) min(upR[j], dist)/ max(1,upR[j]);
-                                }
-                                else
-                                {
-                                    distScore += (double) min(downR[j], dist) / max(1,downR[j]);
-                                }
-                            }
-                            else continue;
-                        }
-                    }
-                    curScore += (double)distScore / 10 ;
-                    //cerr << "DistScore:" << (double)distScore  << endl;
-                    vector<int> newGroup;
-                    int newNumOfGroup = 0;
-                    if (numOfGroup != NP)
-                    {
-                        newGroup = vector<int>(NP);
-                        int pos = *max_element(group.begin(), group.end()) + 1;
-                        map<int, int> allocated;
-                        for (int j = 0; j < NP; j++)
-                        {
-                            int x = points[2 * j];
-                            int y = points[2 * j + 1];
-                            if (y > (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
-                                newGroup[j] = group[j];
-                            else if (y < (double)-(contactX - originX)*(x - contactX) / (contactY - originY) + contactY)
-                            {
-                                if (allocated.find(group[j]) != allocated.end())
-                                    newGroup[j] = allocated[group[j]];
-                                else
-                                {
-                                    newGroup[j] = pos;
-                                    allocated[group[j]] = pos;
-                                    pos++;
-                                }
-                            }
-                        }
-                        vector<int> newGroupSorted = newGroup;
-                        sort(newGroupSorted.begin(), newGroupSorted.end());
-                        vector<int> newGroupUnique;
-                        unique_copy(newGroupSorted.begin(), newGroupSorted.end(), back_inserter(newGroupUnique));
-                        newNumOfGroup = newGroupUnique.size();
-                        if (i*i > numOfGroup)
-                        {
-                            curScore += (newNumOfGroup - numOfGroup);
-                            //cerr << "numOfGroupScore" << newNumOfGroup - numOfGroup << endl;
-                        }
-                    }
-                    if (maxScore < curScore)
-                    {
-                        updated = true;
-                        maxScore = curScore;
-                        maxOriginX = originX;
-                        maxOriginY = originY;
-                        maxContactX = contactX;
-                        maxContactY = contactY;
-                        maxAnotherX = anotherX;
-                        maxAnotherY = anotherY;
-                        maxContactLines = contactLines;
-                        maxGroup = newGroup;
-                    }
-                }
-                if (!updated)
-                {
-                    continue;
-                }
-                ret[4 * i] = maxContactX;
-                ret[4 * i + 1] = maxContactY;
-                ret[4 * i + 2] = maxAnotherX;
-                ret[4 * i + 3] = maxAnotherY;
-                linePoints.insert(make_tuple(maxContactX, maxContactY));
-                linePoints.insert(make_tuple(maxAnotherX, maxAnotherY));
-                if (numOfGroup != NP) group = maxGroup;
-                //cerr << maxContactLines << endl;
-                //cerr << "contactX:" << maxContactX << endl;
-                //cerr << "contactY:" << maxContactY << endl;
-                //cerr << "anotherX:" << maxContactX - (maxContactY - originY) << endl;
-                //cerr << "anotherY:" << maxContactY + (maxContactX - originX) << endl;
-                //cerr << maxScore << endl;
+                newLine = Line(distCoordinate(engine), distCoordinate(engine), distCoordinate(engine), distCoordinate(engine));
+                newGroup = vector<int>(NP);
+                int pos = *max_element(group.begin(), group.end()) + 1;
+                map<int, int> allocated;
                 for (int j = 0; j < NP; j++)
                 {
-                    int x = points[2 * j];
-                    int y = points[2 * j + 1];
-                    int dist =
-                        ((maxContactX - maxOriginX) * x + (maxContactY - maxOriginY) * y
-                            - (maxContactY - maxOriginY) * maxContactY - (maxContactX - maxOriginX) * maxContactX)
-                        / sqrt((maxContactX - maxOriginX)*(maxContactX - maxOriginX) + (maxContactY - maxOriginY)*(maxContactY - maxOriginY));
-                    dist *= dist;
-                    if (maxContactLines == "Right" || maxContactLines == "Left")
-                    {
-                        if (y < (double)-(maxContactX - maxOriginX)*(x - maxContactX) / (maxContactY - maxOriginY) + maxContactY)
-                        {
-                            if ((maxContactX - maxOriginX)*(maxContactY - maxOriginY) >= 0)
-                            {
-                                leftR[j] = min(leftR[j], dist);
-                            }
-                            else
-                            {
-                                rightR[j] = min(rightR[j], dist);
-                            }
-                        }
-                        else if (y > (double) - (maxContactX - maxOriginX)*(x - maxContactX) / (maxContactY - maxOriginY) + maxContactY)
-                        {
-                            if ((maxContactX - maxOriginX)*(maxContactY - maxOriginY) >= 0)
-                            {
-                                leftR[j] = min(leftR[j], dist);
-                            }
-                            else
-                            {
-                                rightR[j] = min(rightR[j], dist);
-                            }
-                        }
-                    }
+                    if (isOnTheLine(newLine, Point(ps[2 * j], ps[2 * j + 1])))
+                        newGroup[j] = group[j];
                     else
                     {
-                        if (y < (double)-(maxContactX - maxOriginX)*(x - maxContactX) / (maxContactY - maxOriginY) + maxContactY)
+                        if (allocated.find(group[j]) != allocated.end())
+                            newGroup[j] = allocated[group[j]];
+                        else
                         {
-                            if ((maxContactX - maxOriginX)*(maxContactY - maxOriginY) >= 0)
-                            {
-                                downR[j] = min(downR[j], dist);
-                            }
-                            else
-                            {
-                                upR[j] = min(upR[j], dist);
-                            }
-                        }
-                        else if (y > (double) - (maxContactX - maxOriginX)*(x - maxContactX) / (maxContactY - maxOriginY) + maxContactY)
-                        {
-                            if ((maxContactX - maxOriginX)*(maxContactY - maxOriginY) >= 0)
-                            {
-                                downR[j] = min(downR[j], dist);
-                            }
-                            else
-                            {
-                                upR[j] = min(upR[j], dist);
-                            }
+                            newGroup[j] = pos;
+                            allocated[group[j]] = pos;
+                            pos++;
                         }
                     }
                 }
-            }
-            if (numOfGroup == NP)
-            {
-                long long curAllScore = 0;
-                for (int i = 0; i < NP; i++)
+                set<int> groupSet;
+                for (auto& g : newGroup)
                 {
-                    curAllScore += rightR[i] + leftR[i] + downR[i] + upR[i];
+                    groupSet.insert(g);
                 }
-                if (curAllScore > maxAllScore)
-                {
-                    maxAllScore = curAllScore;
-                    decideRet = ret;
-                    maxK = k;
-                }
+                numOfGroup = groupSet.size();
+                group = newGroup;
             }
-            auto time = chrono::system_clock::now() - start;
-            //cerr << time.count()/1e7 << endl;
-            k = 1 - (double)cnt /maxCnt;
+            for (int i = 0; i < NP; i++) cutAndMakeNewChild(state, newLine, -1, i);
+
+            lines[i] = newLine;
         }
-        auto end = chrono::duration_cast<chrono::seconds>(chrono::system_clock::now() - start);
-        cerr << "time:" << end.count() << endl;
-        cerr << maxK << endl;
-        return vector<int>();
+        cerr << "end" << endl;
+        for (int i = 0; i < NP; i++) calculatePointScores(state, i);
+        rootsLength = 0;
+        for (int i = 0; i < NP; i++) rootsLength += state.pointScores[i];
+        cerr << rootsLength << endl;
+        vector<int> ret(4 * (NP - 1));
+        for (int i = 0; i < NP - 1; i++)
+        {
+            auto line = lines[i];
+            ret[4 * i] = line.p1.x;
+            ret[4 * i + 1] = line.p1.y;
+            ret[4 * i + 2] = line.p2.x;
+            ret[4 * i + 3] = line.p2.y;
+        }
+        return ret;
     }
 };
 // -------8<------- end of solution submitted to the website -------8<-------
@@ -397,6 +211,13 @@ int main() {
     cin >> Nroots;
     vector<int> roots(Nroots);
     getVector(roots);
+
+    //cerr << NP << endl;
+    //cerr << Npoints << endl;
+    //for (int i = 0; i < points.size(); i++) cerr << points[i] << endl;
+    //cerr << Nroots << endl;
+    //for (int i = 0; i < roots.size(); i++) cerr << roots[i] << endl;
+    //cerr << "input is end" << endl;
 
     CutTheRoots cr;
     vector<int> ret = cr.makeCuts(NP, points, roots);
