@@ -37,8 +37,9 @@ public:
 class State
 {
 public:
-    vector<int> points;
+    vector<double> points;
     vector<vector<int>> children;
+    vector<stack<int>> leaves;
     vector<Line> lines;
     vector<int> group;
     vector<double> pointScores;
@@ -87,27 +88,27 @@ public:
         }
     }
 
-    void calculatePointScores(State& state, int numOfPoint)
+    void calculatePointScoresAndGenerateLeaves(State& state,int numOfRoot, int numOfPoint)
     {
         if (state.children[numOfPoint].empty())
         {
             state.pointScores[numOfPoint] = 0;
+            state.leaves[numOfRoot].push(numOfPoint);
             return;
         }
-        for (auto& numOfChild : state.children[numOfPoint]) calculatePointScores(state, numOfChild);
-        int x = state.points[2 * numOfPoint];
-        int y = state.points[2 * numOfPoint + 1];
+        for (auto& numOfChild : state.children[numOfPoint]) calculatePointScoresAndGenerateLeaves(state,numOfRoot, numOfChild);
+        double x = state.points[2 * numOfPoint];
+        double y = state.points[2 * numOfPoint + 1];
         double score = 0;
         for (auto& numOfChild : state.children[numOfPoint])
         {
             score += state.pointScores[numOfChild];
-            int childX = state.points[2 * numOfChild];
-            int childY = state.points[2 * numOfChild + 1];
+            double childX = state.points[2 * numOfChild];
+            double childY = state.points[2 * numOfChild + 1];
             score += sqrt((x - childX)*(x - childX) + (y - childY)*(y - childY));
         }
         state.pointScores[numOfPoint] = score;
     }
-
     vector<int> makeCuts(const int NP, vector<int> ps, vector<int> rs)
     {
         int NR = rs.size() / 2;
@@ -119,67 +120,101 @@ public:
         random_device seed_gen;
         mt19937 engine(seed_gen());
         uniform_int_distribution<> distCoordinate(0, 1024);
+        map<double, State,greater<double>> m;
         State state;
-        state.points = ps;
-        state.children = children;
-        state.group = group;
-        state.lines = lines;
-        state.pointScores = vector<double>(NP + NR, 0.);
-        for (int i = 0; i < NP; i++) calculatePointScores(state, i);
-        double rootsLength = 0;
-        for (int i = 0; i < NP; i++) rootsLength += state.pointScores[i];
-        cerr << rootsLength << endl;
-        state.points = ps;
+        state.points.clear();
+        for (int i = 0; i < ps.size(); i++) state.points.push_back(ps[i]);
         state.children = children;
         state.group = group;
         state.lines = lines;
         state.pointScores = vector<double>(NP + NR, 0.);
         group = vector<int>(NP, 0);
         numOfGroup = 1;
+        state.leaves = vector<stack<int>>(NP);
+        for (int i = 0; i < NP; i++) calculatePointScoresAndGenerateLeaves(state, i, i);
+        double allRootsLength = 0;
+        for (int i = 0; i < NP; i++) allRootsLength += state.pointScores[i];
+        int beamWidth = 5;
+        m[-INFTY] = state;
         for (int i = 0; i < NP - 1; i++)
         {
-            auto newLine = Line(distCoordinate(engine), distCoordinate(engine), distCoordinate(engine), distCoordinate(engine));
-            vector<int> newGroup = group;
-            while (numOfGroup <= i + 1)
+            map<double, State, greater<double>> newM;
+            for (auto& prevStatePair : m)
             {
-                newLine = Line(distCoordinate(engine), distCoordinate(engine), distCoordinate(engine), distCoordinate(engine));
-                newGroup = vector<int>(NP);
-                int pos = *max_element(group.begin(), group.end()) + 1;
-                map<int, int> allocated;
-                for (int j = 0; j < NP; j++)
+                bool ok = false;
+                auto prevState = prevStatePair.second;
+                for (int cnt = 0; cnt < beamWidth; cnt++)
                 {
-                    if (isOnTheLine(newLine, Point(ps[2 * j], ps[2 * j + 1])))
-                        newGroup[j] = group[j];
-                    else
+                    State newState = prevState;
+                    uniform_int_distribution<int> distRoot(0, NP - 1);
+                    int root1 = distRoot(engine);
+                    while (prevState.leaves[root1].empty()) root1 = distRoot(engine);
+                    int numOfLeaf1 = prevState.leaves[root1].top(); prevState.leaves[root1].pop();
+                    int root2 = distRoot(engine);
+                    while (prevState.leaves[root2].empty()) root2 = distRoot(engine);
+                    int numOfLeaf2 = prevState.leaves[root2].top(); prevState.leaves[root2].pop();
+                    newState.lines[i] = Line(prevState.points[2 * numOfLeaf1],prevState.points[2 * numOfLeaf1 + 1]
+                                            ,prevState.points[2 * numOfLeaf2],prevState.points[2 * numOfLeaf2 + 1]);
+                    newState.group = vector<int>(NP);
+                    int newNumOfGroup = 0;
+                    int pos = *max_element(prevState.group.begin(), prevState.group.end()) + 1;
+                    map<int, int> allocated;
+                    for (int j = 0; j < NP; j++)
                     {
-                        if (allocated.find(group[j]) != allocated.end())
-                            newGroup[j] = allocated[group[j]];
+                        if (isOnTheLine(newState.lines[i], Point(prevState.points[2 * j], prevState.points[2 * j + 1])))
+                            newState.group[j] = prevState.group[j];
                         else
                         {
-                            newGroup[j] = pos;
-                            allocated[group[j]] = pos;
-                            pos++;
+                            if (allocated.find(prevState.group[j]) != allocated.end())
+                                newState.group[j] = allocated[prevState.group[j]];
+                            else
+                            {
+                                newState.group[j] = pos;
+                                allocated[prevState.group[j]] = pos;
+                                pos++;
+                            }
                         }
                     }
+                    set<int> groupSet;
+                    for (auto& g : newState.group)
+                    {
+                        groupSet.insert(g);
+                    }
+                    newNumOfGroup = groupSet.size();
+                    for (int j = 0; j < NP; j++) cutAndMakeNewChild(newState, newState.lines[i], -1, j);
+                    newState.leaves = vector<stack<int>>(NP);
+                    for (int j = 0; j < NP; j++) calculatePointScoresAndGenerateLeaves(newState,j, j);
+                    double rootsLength = 0;
+                    for (int j = 0; j < NP; j++) rootsLength += newState.pointScores[j];
+                    if (newNumOfGroup == NP || newNumOfGroup > i + 1)
+                    {
+                        //cerr << newNumOfGroup << endl;
+                        newM[rootsLength] = newState;
+                    }
+                    else if (ok && i != NP-1 && newNumOfGroup > sqrt(i))
+                    {
+                        newM[rootsLength] = newState;
+                    }
+                    if (cnt == beamWidth - 1 && newM.empty()) cnt = -1;
                 }
-                set<int> groupSet;
-                for (auto& g : newGroup)
-                {
-                    groupSet.insert(g);
-                }
-                numOfGroup = groupSet.size();
-                group = newGroup;
             }
-            for (int i = 0; i < NP; i++) cutAndMakeNewChild(state, newLine, -1, i);
-
-            lines[i] = newLine;
+            m.clear();
+            int k = 0;
+            for (auto& newStatePair : newM)
+            {
+                if (k == beamWidth) break;
+                //cerr << k << ":" << newStatePair.first << endl;
+                m[newStatePair.first] = newStatePair.second;
+                k++;
+            }
         }
-        cerr << "end" << endl;
-        for (int i = 0; i < NP; i++) calculatePointScores(state, i);
-        rootsLength = 0;
-        for (int i = 0; i < NP; i++) rootsLength += state.pointScores[i];
-        cerr << rootsLength << endl;
         vector<int> ret(4 * (NP - 1));
+        auto head = *m.begin();
+        if (m.empty()) cerr << "empty" << endl;
+        lines = head.second.lines;
+        double resultRootsLength = 0;
+        for (int i = 0; i < NP; i++) resultRootsLength += head.second.pointScores[i];
+        cerr << resultRootsLength << endl;
         for (int i = 0; i < NP - 1; i++)
         {
             auto line = lines[i];
