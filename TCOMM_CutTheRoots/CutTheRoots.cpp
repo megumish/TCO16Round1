@@ -203,7 +203,7 @@ public:
         uniform_int_distribution<> distD(-d, d);
         double initDepth = maxDepth * pow(M_E,3-AVGR/100+6-NP/10);
         double minDepth = 2.0;
-        int maxGeneration = min(30., max(10., pow(M_E, 2 - NP/10)));
+        int maxGeneration = min(30., max(20., pow(M_E, 4 - NP/10)));
         int maxNumber = max(5,NP / 10);
         cerr << "d:" << d << endl;
         cerr << "initDepth:" << initDepth << endl;
@@ -212,7 +212,7 @@ public:
         cerr << "maxNumber" << maxNumber << endl;
         for (int generation = 0; generation < maxGeneration; generation++)
         {
-            vector<double> maxScore(groupOfLines.size());
+            vector<double> bestScore(groupOfLines.size());
             for (int i = 0; i < groupOfLines.size(); i++)
             {
                 state.lines = groupOfLines[i];
@@ -261,8 +261,10 @@ public:
                 double curRootsLength = 0;
                 for (int j = 0; j < NP; j++) curRootsLength += state.pointScores[j];
                 double curScore = numOfGroup + (curRootsLength / allRootsLength);
-                maxScore[i] = curScore;
+                bestScore[i] = curScore;
             }
+            vector<double> nextScore(groupOfLines.size());
+            vector<vector<Line>> bestGroupOfLines = groupOfLines;
             for (int number = 0; number < maxNumber; number++)
             {
                 for (int i = 0; i < groupOfLines.size(); i++)
@@ -324,9 +326,14 @@ public:
                     double curRootsLength = 0;
                     for (int j = 0; j < NP; j++) curRootsLength += state.pointScores[j];
                     double curScore = numOfGroup + (curRootsLength / allRootsLength);
-                    if (curScore > maxScore[i])
+                    if (curScore > bestScore[i])
                     {
-                        maxScore[i] = curScore;
+                        bestScore[i] = curScore;
+                        bestGroupOfLines[i] = groupOfLines[i];
+                    }
+                    if(curScore > nextScore[i] || (double)(maxNumber - number)/maxNumber > dist(engine))
+                    {
+                        nextScore[i] = curScore;
                     }
                     else
                     {
@@ -337,11 +344,12 @@ public:
             rank.clear();
             for (int i = 0; i < groupOfLines.size(); i++)
             {
-                if (maxScore[i] > NP)
+                if (bestScore[i] > NP)
                 {
-                    rank[maxScore[i]] = groupOfLines[i];
+                    rank[bestScore[i]] = bestGroupOfLines[i];
                 }
             }
+            int groupOfLinesSize = groupOfLines.size();
             groupOfLines.clear();
             int i = 0;
             auto winnerPair = *rank.begin();
@@ -354,7 +362,7 @@ public:
                 int j = 0;
                 for (auto& linesPair2 : rank)
                 {
-                    if (j == 3) break;
+                    if (j == min(5,(int)groupOfLines.size())) break;
                     if (i != j)
                     {
                         newLines = linesPair2.second;
