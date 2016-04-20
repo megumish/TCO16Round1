@@ -119,6 +119,7 @@ public:
     vector<int> makeCuts(const int NP, vector<int> ps, vector<int> rs)
     {
         int NR = rs.size() / 2;
+        int AVGR = NR / NP;
         State state;
         state.children = vector<vector<int>>(NP + NR);
         for (int i = 0; i < NR; i++) state.children[rs[2 * i]].push_back(rs[2 * i + 1]);
@@ -151,7 +152,7 @@ public:
         uniform_int_distribution<> distNumOfLine(0, NP - 2);
         vector<vector<Line>> groupOfLines;
         auto start = chrono::system_clock::now();
-        for (int cnt = 0; cnt < 10; cnt++)
+        for (int cnt = 0; cnt < 3; cnt++)
         {
             int numOfGroup = 1;
             auto group = vector<int>(NP,0);
@@ -198,9 +199,20 @@ public:
         double maxScore = -INFTY;
         map<double, vector<Line>,greater<double>> rank;
         uniform_real_distribution<> dist(0, 1);
-        for (int generation = 0; generation < NP; generation++)
+        int d = min(200.,max(1., pow(M_E, 80 - NP)));
+        uniform_int_distribution<> distD(-d, d);
+        double initDepth = maxDepth * pow(M_E,3-AVGR/100+6-NP/10);
+        double minDepth = 2.0;
+        int maxGeneration = min(30., max(10., pow(M_E, 2 - NP/10)));
+        int maxNumber = max(5,NP / 10);
+        cerr << "d:" << d << endl;
+        cerr << "initDepth:" << initDepth << endl;
+        cerr << "minDepth:" << minDepth << endl;
+        cerr << "maxGeneration:" << maxGeneration << endl;
+        cerr << "maxNumber" << maxNumber << endl;
+        for (int generation = 0; generation < maxGeneration; generation++)
         {
-            rank.clear();
+            vector<double> maxScore(groupOfLines.size());
             for (int i = 0; i < groupOfLines.size(); i++)
             {
                 state.lines = groupOfLines[i];
@@ -230,14 +242,14 @@ public:
                         }
                     }
                 }
-                int depth = min((double)maxDepth,max(2.,maxDepth * pow(M_E,80-NP)));
-                    for (int j = 0; j < (NP - 1); j++)
+                int depth = min((double)maxDepth, max(minDepth, initDepth));
+                for (int j = 0; j < (NP - 1); j++)
+                {
+                    for (int k = 0; k < NP; k++)
                     {
-                        for (int k = 0; k < NP; k++)
-                        {
-                            cutAndMakeNewChild(state, state.lines[j], -1, k, 0, depth);
-                        }
+                        cutAndMakeNewChild(state, state.lines[j], -1, k, 0, depth);
                     }
+                }
                 int numOfGroup = 0;
                 set<int> groupSet;
                 for (auto& g : state.group)
@@ -248,13 +260,92 @@ public:
                 for (int j = 0; j < NP; j++) calculatePointScores(state, j);
                 double curRootsLength = 0;
                 for (int j = 0; j < NP; j++) curRootsLength += state.pointScores[j];
-                double curScore = numOfGroup + curRootsLength /allRootsLength;
-                rank[curScore] = state.lines;
+                double curScore = numOfGroup + (curRootsLength / allRootsLength);
+                maxScore[i] = curScore;
+            }
+            for (int number = 0; number < maxNumber; number++)
+            {
+                for (int i = 0; i < groupOfLines.size(); i++)
+                {
+                    int numOfLine = distNumOfLine(engine);
+                    auto prevLine = groupOfLines[i][numOfLine];
+                    int x1 = groupOfLines[i][numOfLine].p1.x + distD(engine);
+                    int y1 = groupOfLines[i][numOfLine].p1.y + distD(engine);
+                    int x2 = groupOfLines[i][numOfLine].p2.x + distD(engine);
+                    int y2 = groupOfLines[i][numOfLine].p2.y + distD(engine);
+                    while (x1 < 0 || x1 > 1024) x1 = groupOfLines[i][numOfLine].p1.x + distD(engine);
+                    while (y1 < 0 || y1 > 1024) y1 = groupOfLines[i][numOfLine].p1.y + distD(engine);
+                    while (x2 < 0 || x2 > 1024) x2 = groupOfLines[i][numOfLine].p2.x + distD(engine);
+                    while (y2 < 0 || y2 > 1024) y2 = groupOfLines[i][numOfLine].p2.y + distD(engine);
+                    groupOfLines[i][numOfLine] = Line(x1, y1, x2, y2);
+                    state.lines = groupOfLines[i];
+                    state.children = initChildren;
+                    state.group = vector<int>(NP, 0);
+                    state.points = initPoints;
+                    state.pointScores = vector<double>(NP + NR);
+                    for (int j = 0; j < NP - 1; j++)
+                    {
+                        auto prevGroup = state.group;
+                        int pos = *max_element(prevGroup.begin(), prevGroup.end()) + 1;
+                        map<int, int> allocated;
+                        for (int k = 0; k < NP; k++)
+                        {
+                            if (isOnTheLine(state.lines[j], Point(state.points[2 * k], state.points[2 * k + 1])))
+                                state.group[k] = prevGroup[k];
+                            else
+                            {
+                                if (allocated.find(prevGroup[k]) != allocated.end())
+                                    state.group[k] = allocated[prevGroup[k]];
+                                else
+                                {
+                                    state.group[k] = pos;
+                                    allocated[prevGroup[k]] = pos;
+                                    pos++;
+                                }
+                            }
+                        }
+                    }
+                    int depth = min((double)maxDepth, max(minDepth, initDepth));
+                    for (int j = 0; j < (NP - 1); j++)
+                    {
+                        for (int k = 0; k < NP; k++)
+                        {
+                            cutAndMakeNewChild(state, state.lines[j], -1, k, 0, depth);
+                        }
+                    }
+                    int numOfGroup = 0;
+                    set<int> groupSet;
+                    for (auto& g : state.group)
+                    {
+                        groupSet.insert(g);
+                    }
+                    numOfGroup = groupSet.size();
+                    for (int j = 0; j < NP; j++) calculatePointScores(state, j);
+                    double curRootsLength = 0;
+                    for (int j = 0; j < NP; j++) curRootsLength += state.pointScores[j];
+                    double curScore = numOfGroup + (curRootsLength / allRootsLength);
+                    if (curScore > maxScore[i])
+                    {
+                        maxScore[i] = curScore;
+                    }
+                    else
+                    {
+                        groupOfLines[i][numOfLine] = prevLine;
+                    }
+                }
+            }
+            rank.clear();
+            for (int i = 0; i < groupOfLines.size(); i++)
+            {
+                if (maxScore[i] > NP)
+                {
+                    rank[maxScore[i]] = groupOfLines[i];
+                }
             }
             groupOfLines.clear();
             int i = 0;
             auto winnerPair = *rank.begin();
-            cerr << generation << ":"  << fixed << setprecision(6) << winnerPair.first << endl;
+            cerr << "g" << generation << ":"  << fixed << setprecision(6) << winnerPair.first << endl;
             for (auto& linesPair1 : rank)
             {
                 groupOfLines.push_back(linesPair1.second);
@@ -263,7 +354,7 @@ public:
                 int j = 0;
                 for (auto& linesPair2 : rank)
                 {
-                    if (linesPair2.first < NP) break;
+                    if (j == 3) break;
                     if (i != j)
                     {
                         newLines = linesPair2.second;
